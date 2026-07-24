@@ -1,0 +1,5 @@
+# Claude Code working files — local tooling, not part of the app
+.claude/
+.claude-trust.json
+CLAUDE.md
+claude-prompt.md
