@@ -359,13 +359,44 @@ header .header-actions {
 
 .day-entry-row {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   padding: 4px 0;
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
 
+.day-entry-main {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
 .day-entry-time { font-family: var(--font-mono); }
+
+.day-entry-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.day-entry-btn {
+  width: 28px; height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.day-entry-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.day-entry-btn svg { width: 15px; height: 15px; }
 
 .day-total {
   display: flex;
@@ -603,6 +634,18 @@ header .header-actions {
   flex: 1;
   font-size: 0.85rem;
   font-weight: 500;
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background var(--transition);
+}
+
+.project-row-name:hover { background: var(--bg-hover); }
+
+.project-row-edit {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 0.85rem;
 }
 
 .project-row-fav {
@@ -1143,7 +1186,6 @@ function renderFavorites() {
       onclick: () => toggleTimer(proj.id)
     });
     card.style.setProperty('--proj-color', proj.color);
-    card.querySelector; // noop
     const bar = el('div');
     bar.style.cssText = `position:absolute;top:0;left:0;width:100%;height:4px;background:${proj.color}`;
     card.appendChild(bar);
@@ -1282,12 +1324,25 @@ function renderDayView() {
       const details = el('div', { className: 'day-project-entries' + (isOpen ? ' open' : '') });
       projEntries.sort((a,b) => new Date(a.start) - new Date(b.start)).forEach(entry => {
         const row = el('div', { className: 'day-entry-row' });
-        row.appendChild(el('span', { className: 'day-entry-time' },
+        const main = el('div', { className: 'day-entry-main' });
+        main.appendChild(el('span', { className: 'day-entry-time' },
           `${fmtTime(entry.start)} – ${fmtTime(entry.end)}`
         ));
-        row.appendChild(el('span', { className: 'day-entry-time' },
+        main.appendChild(el('span', { className: 'day-entry-time' },
           fmtDurationShort(getEntryDuration(entry))
         ));
+        row.appendChild(main);
+
+        const actions = el('div', { className: 'day-entry-actions' });
+        const editBtn = el('button', {
+          className: 'day-entry-btn',
+          title: 'Bearbeiten',
+          onclick: (e) => { e.stopPropagation(); openEditEntry(entry.id); }
+        });
+        editBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+        actions.appendChild(editBtn);
+        row.appendChild(actions);
+
         details.appendChild(row);
       });
       if (running) {
@@ -1578,8 +1633,8 @@ function renderProjectList(container) {
     colorDot.addEventListener('click', () => cycleColor(proj.id));
     row.appendChild(colorDot);
 
-    const nameSpan = el('span', { className: 'project-row-name' }, proj.name);
-    nameSpan.addEventListener('dblclick', () => renameProject(proj.id));
+    const nameSpan = el('span', { className: 'project-row-name', title: 'Zum Umbenennen klicken' }, proj.name);
+    nameSpan.addEventListener('click', () => beginRenameProject(proj.id, nameSpan));
     row.appendChild(nameSpan);
 
     const favBtn = el('button', {
@@ -1647,17 +1702,35 @@ function cycleColor(id) {
   renderCurrentView();
 }
 
-function renameProject(id) {
+function beginRenameProject(id, spanEl) {
   const proj = getProject(id);
   if (!proj) return;
-  const newName = prompt('Neuer Name:', proj.name);
-  if (newName && newName.trim()) {
-    proj.name = newName.trim();
-    saveState();
+  const input = el('input', { className: 'form-input project-row-edit', value: proj.name });
+  spanEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    if (save) {
+      const newName = input.value.trim();
+      if (newName && newName !== proj.name) {
+        proj.name = newName;
+        saveState();
+        renderFavorites();
+        renderCurrentView();
+      }
+    }
     renderProjectList();
-    renderFavorites();
-    renderCurrentView();
-  }
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
 }
 
 function confirmDeleteProject(id) {
@@ -1690,16 +1763,38 @@ function confirmDeleteProject(id) {
 }
 
 /* ============================================
-   MANUAL ENTRY MODAL
+   ENTRY MODAL (create + edit)
    ============================================ */
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function localTimeStr(d) {
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
 function openManualEntry() {
+  openEntryModal(null);
+}
+
+function openEditEntry(id) {
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) return;
+  openEntryModal(entry);
+}
+
+function openEntryModal(entry) {
   if (state.projects.length === 0) {
     showToast('Erstelle zuerst ein Projekt');
     return;
   }
+  const isEdit = !!entry;
+  const startDate = isEdit ? new Date(entry.start) : null;
+  const endDate = isEdit ? new Date(entry.end) : null;
+
   openModal(modal => {
     const header = el('div', { className: 'modal-header' });
-    header.appendChild(el('div', { className: 'modal-title' }, 'Manueller Eintrag'));
+    header.appendChild(el('div', { className: 'modal-title' }, isEdit ? 'Eintrag bearbeiten' : 'Manueller Eintrag'));
     header.appendChild(el('button', { className: 'modal-close', onclick: closeModal }, '×'));
     modal.appendChild(header);
 
@@ -1708,7 +1803,9 @@ function openManualEntry() {
     projGroup.appendChild(el('label', { className: 'form-label' }, 'Projekt'));
     const select = el('select', { className: 'form-select', id: 'manual-project' });
     state.projects.forEach(p => {
-      select.appendChild(el('option', { value: p.id }, p.name));
+      const opt = el('option', { value: p.id }, p.name);
+      if (isEdit && p.id === entry.projectId) opt.setAttribute('selected', 'selected');
+      select.appendChild(opt);
     });
     projGroup.appendChild(select);
     modal.appendChild(projGroup);
@@ -1717,7 +1814,8 @@ function openManualEntry() {
     const dateGroup = el('div', { className: 'form-group' });
     dateGroup.appendChild(el('label', { className: 'form-label' }, 'Datum'));
     const today = new Date().toISOString().split('T')[0];
-    const dateInput = el('input', { className: 'form-input', type: 'date', id: 'manual-date', value: today, max: today });
+    const dateVal = isEdit ? localDateStr(startDate) : today;
+    const dateInput = el('input', { className: 'form-input', type: 'date', id: 'manual-date', value: dateVal, max: today });
     dateGroup.appendChild(dateInput);
     modal.appendChild(dateGroup);
 
@@ -1725,19 +1823,26 @@ function openManualEntry() {
     const timeRow = el('div', { className: 'form-row' });
     const startGroup = el('div', { className: 'form-group' });
     startGroup.appendChild(el('label', { className: 'form-label' }, 'Start'));
-    startGroup.appendChild(el('input', { className: 'form-input', type: 'time', id: 'manual-start', value: '09:00' }));
+    startGroup.appendChild(el('input', { className: 'form-input', type: 'time', id: 'manual-start', value: isEdit ? localTimeStr(startDate) : '09:00' }));
     timeRow.appendChild(startGroup);
     const endGroup = el('div', { className: 'form-group' });
     endGroup.appendChild(el('label', { className: 'form-label' }, 'Ende'));
-    endGroup.appendChild(el('input', { className: 'form-input', type: 'time', id: 'manual-end', value: '10:00' }));
+    endGroup.appendChild(el('input', { className: 'form-input', type: 'time', id: 'manual-end', value: isEdit ? localTimeStr(endDate) : '10:00' }));
     timeRow.appendChild(endGroup);
     modal.appendChild(timeRow);
 
-    modal.appendChild(el('button', { className: 'btn btn-primary btn-block', onclick: saveManualEntry }, 'Speichern'));
+    if (isEdit) {
+      const btnRow = el('div', { className: 'btn-row' });
+      btnRow.appendChild(el('button', { className: 'btn btn-danger', onclick: () => confirmDeleteEntry(entry.id) }, 'Löschen'));
+      btnRow.appendChild(el('button', { className: 'btn btn-primary', style: { flex: '1' }, onclick: () => saveEntryEdit(entry.id) }, 'Speichern'));
+      modal.appendChild(btnRow);
+    } else {
+      modal.appendChild(el('button', { className: 'btn btn-primary btn-block', onclick: saveManualEntry }, 'Speichern'));
+    }
   });
 }
 
-function saveManualEntry() {
+function readEntryForm() {
   const projectId = document.getElementById('manual-project').value;
   const dateStr = document.getElementById('manual-date').value;
   const startStr = document.getElementById('manual-start').value;
@@ -1745,7 +1850,7 @@ function saveManualEntry() {
 
   if (!dateStr || !startStr || !endStr) {
     showToast('Bitte alle Felder ausfüllen');
-    return;
+    return null;
   }
 
   const start = new Date(`${dateStr}T${startStr}:00`);
@@ -1753,25 +1858,70 @@ function saveManualEntry() {
 
   if (end <= start) {
     showToast('Endzeit muss nach Startzeit liegen');
-    return;
+    return null;
   }
 
   const now = new Date();
   if (start > now) {
     showToast('Keine Einträge in der Zukunft');
-    return;
+    return null;
   }
 
+  return { projectId, start, end };
+}
+
+function saveManualEntry() {
+  const data = readEntryForm();
+  if (!data) return;
   state.entries.push({
     id: crypto.randomUUID(),
-    projectId,
-    start: start.toISOString(),
-    end: end.toISOString()
+    projectId: data.projectId,
+    start: data.start.toISOString(),
+    end: data.end.toISOString()
   });
   saveState();
   closeModal();
-  renderCurrentView();
+  render();
   showToast('Eintrag gespeichert');
+}
+
+function saveEntryEdit(id) {
+  const data = readEntryForm();
+  if (!data) return;
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) { closeModal(); return; }
+  entry.projectId = data.projectId;
+  entry.start = data.start.toISOString();
+  entry.end = data.end.toISOString();
+  saveState();
+  closeModal();
+  render();
+  showToast('Eintrag aktualisiert');
+}
+
+function confirmDeleteEntry(id) {
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) return;
+  const proj = getProject(entry.projectId);
+  openModal(modal => {
+    const header = el('div', { className: 'modal-header' });
+    header.appendChild(el('div', { className: 'modal-title' }, 'Eintrag löschen'));
+    header.appendChild(el('button', { className: 'modal-close', onclick: closeModal }, '×'));
+    modal.appendChild(header);
+    modal.appendChild(el('div', { className: 'confirm-msg' },
+      `Eintrag ${fmtTime(entry.start)} – ${fmtTime(entry.end)}${proj ? ' · ' + proj.name : ''} wird unwiderruflich gelöscht.`
+    ));
+    const actions = el('div', { className: 'confirm-actions' });
+    actions.appendChild(el('button', { className: 'btn btn-secondary', onclick: closeModal }, 'Abbrechen'));
+    actions.appendChild(el('button', { className: 'btn btn-danger', onclick: () => {
+      state.entries = state.entries.filter(e => e.id !== id);
+      saveState();
+      closeModal();
+      render();
+      showToast('Eintrag gelöscht');
+    }}, 'Löschen'));
+    modal.appendChild(actions);
+  });
 }
 
 /* ============================================
