@@ -38,6 +38,7 @@
   --accent-text: #ffffff;
   --danger: #c0392b;
   --danger-light: #fdecea;
+  --warn: #b7791f;
   --active-glow: rgba(45, 90, 39, 0.15);
   --timer-bg: #2d5a27;
   --timer-text: #ffffff;
@@ -68,6 +69,7 @@
   --accent-text: #0f0f14;
   --danger: #e74c3c;
   --danger-light: #2e1a1a;
+  --warn: #e0a82e;
   --active-glow: rgba(92, 184, 92, 0.15);
   --timer-bg: #5cb85c;
   --timer-text: #0f0f14;
@@ -237,6 +239,22 @@ header .header-actions {
 
 .fav-card.running .fav-card-timer { color: var(--accent); }
 
+.fav-card.running.overrun {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 3px rgba(183, 121, 31, 0.20);
+  animation: none;
+}
+
+.fav-card.overrun .fav-card-timer { color: var(--warn); }
+
+.fav-card-warn {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--warn);
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
 .fav-card-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -264,6 +282,7 @@ header .header-actions {
   border-radius: var(--radius);
   border: 1px dashed var(--border);
 }
+
 
 /* ============================================
    TABS (View Switcher)
@@ -378,12 +397,36 @@ header .header-actions {
 .day-entry-main {
   display: flex;
   flex: 1;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
-.day-entry-time { font-family: var(--font-mono); }
+.day-entry-time { font-family: var(--font-mono); flex-shrink: 0; }
+
+.day-entry-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: background var(--transition);
+}
+
+.day-entry-note:hover { background: var(--bg-hover); }
+.day-entry-note.empty { color: var(--text-muted); font-style: italic; }
+
+.day-entry-note-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+}
 
 .day-entry-actions {
   display: flex;
@@ -488,6 +531,107 @@ header .header-actions {
   color: var(--text-muted);
   font-size: 0.85rem;
 }
+
+/* ============================================
+   BAR CHART (week / month)
+   ============================================ */
+.bar-chart {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  padding: 12px 6px 6px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+}
+
+.bar-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.bar-total {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  height: 0.75rem;
+  line-height: 0.75rem;
+  white-space: nowrap;
+}
+
+.bar-track {
+  width: 100%;
+  height: 96px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.chart-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.chart-toggle:hover { color: var(--text-secondary); }
+.chart-chevron { display: flex; }
+.chart-chevron svg { width: 16px; height: 16px; transition: transform var(--transition); }
+.chart-chevron.open svg { transform: rotate(180deg); }
+
+.bar-stack {
+  width: 62%;
+  max-width: 26px;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  background: var(--bg-tertiary);
+}
+
+.bar-seg { width: 100%; }
+
+.bar-label {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.bar-tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 3000;
+  pointer-events: none;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 5px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transition: opacity 0.08s ease;
+}
+
+.bar-tooltip.show { opacity: 1; }
 
 /* ============================================
    MODALS & OVERLAYS
@@ -762,11 +906,30 @@ header .header-actions {
   transition: all 0.3s ease;
   z-index: 2000;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .toast.show {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.toast-action {
+  background: none;
+  border: none;
+  color: var(--toast-text);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 /* ============================================
@@ -884,8 +1047,11 @@ header .header-actions {
 <div class="app" id="app">
   <!-- Header -->
   <header>
-    <h1>TimeTrack<span class="version">0.7</span></h1>
+    <h1>TimeTrack<span class="version">0.8.11</span></h1>
     <div class="header-actions">
+      <button class="icon-btn" onclick="openQuickStart()" title="Projekt starten">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
       <button class="icon-btn" onclick="openManualEntry()" title="Manueller Eintrag">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
@@ -947,13 +1113,15 @@ let currentView = 'day';
 let viewDate = new Date();
 let timerInterval = null;
 let openGroups = new Set(); // Track which day-view project groups are expanded
+let inlineEditing = false;  // Suspend the per-second re-render while editing a note inline
+let remindedTimers = new Set(); // Timer runs we've already shown an active reminder for
 
 function getDefaultState() {
   return {
     projects: [],
     entries: [],
     activeTimers: [],
-    settings: { theme: 'auto', lastExportDate: null }
+    settings: { theme: 'auto', lastExportDate: null, reminderHours: 6 }
   };
 }
 
@@ -1015,6 +1183,12 @@ function stopTimer(projectId) {
 
 function toggleTimer(projectId) {
   const wasRunning = isTimerRunning(projectId);
+  const proj = getProject(projectId);
+
+  // Snapshot before mutating, so a stop OR a switch can be undone as a whole
+  const prevEntries = structuredClone(state.entries);
+  const prevTimers = structuredClone(state.activeTimers);
+  const hadOtherTimer = prevTimers.length > 0;
 
   // Stop ALL running timers first (single-timer mode)
   while (state.activeTimers.length > 0) {
@@ -1031,6 +1205,24 @@ function toggleTimer(projectId) {
 
   saveState();
   render();
+
+  // Undo only makes sense when something was stopped: a stop or a switch
+  const name = proj?.name || '';
+  if (wasRunning) {
+    showUndoToast(`Timer „${name}" gestoppt`, prevEntries, prevTimers);
+  } else if (hadOtherTimer) {
+    showUndoToast(`Gewechselt zu „${name}"`, prevEntries, prevTimers);
+  }
+}
+
+function showUndoToast(msg, prevEntries, prevTimers) {
+  showToast(msg, { label: 'Rückgängig', onAction: () => {
+    state.entries = prevEntries;
+    state.activeTimers = prevTimers;
+    saveState();
+    render();
+    showToast('Rückgängig gemacht');
+  }});
 }
 
 function splitAndAddEntries(projectId, start, end) {
@@ -1065,9 +1257,28 @@ function startTickInterval() {
   timerInterval = setInterval(() => {
     if (state.activeTimers.length > 0) {
       renderFavorites();
-      renderCurrentView();
+      if (!inlineEditing) renderCurrentView();
+      checkTimerReminders();
     }
   }, 1000);
+}
+
+// Active in-window reminder: pop a toast once per timer run when it exceeds the threshold
+function checkTimerReminders() {
+  const reminderMs = (state.settings.reminderHours ?? 6) * 3600000;
+  if (reminderMs <= 0) return;
+  state.activeTimers.forEach(timer => {
+    const key = timer.projectId + '|' + timer.startedAt;
+    if (getTimerElapsed(timer) >= reminderMs && !remindedTimers.has(key)) {
+      remindedTimers.add(key);
+      const proj = getProject(timer.projectId);
+      const hrs = Math.floor(getTimerElapsed(timer) / 3600000);
+      showToast(`„${proj?.name || 'Timer'}" läuft seit ${hrs} h — noch aktiv?`, {
+        label: 'Stoppen',
+        onAction: () => toggleTimer(timer.projectId)
+      });
+    }
+  });
 }
 
 /* ============================================
@@ -1181,17 +1392,23 @@ function clearEl(element) {
 function renderFavorites() {
   const container = document.getElementById('favorites');
   clearEl(container);
-  const favs = state.projects.filter(p => p.favorite);
-  if (favs.length === 0) {
-    container.appendChild(el('div', { className: 'favorites-empty' },
-      'Markiere Projekte als Favorit für Schnellzugriff'
+  // Show favorites plus any currently-running project (so a quick-started
+  // non-favorite stays visible and stoppable until it's done)
+  const visible = state.projects.filter(p => p.favorite || isTimerRunning(p.id));
+  if (visible.length === 0) {
+    container.appendChild(el('div', { className: 'favorites-empty', style: { gridColumn: '1 / -1' } },
+      'Starte ein Projekt oder markiere es mit ★ für den Schnellzugriff'
     ));
-    return;
   }
-  favs.forEach(proj => {
+  visible.forEach(proj => {
     const running = isTimerRunning(proj.id);
+    const timer = running ? state.activeTimers.find(t => t.projectId === proj.id) : null;
+    const reminderMs = (state.settings.reminderHours ?? 6) * 3600000;
+    // Overrun uses the timer's continuous run time, not the per-day clamped time
+    const overrun = !!(timer && reminderMs > 0 && getTimerElapsed(timer) >= reminderMs);
+
     const card = el('div', {
-      className: 'fav-card' + (running ? ' running' : ''),
+      className: 'fav-card' + (running ? ' running' : '') + (overrun ? ' overrun' : ''),
       onclick: () => toggleTimer(proj.id)
     });
     card.style.setProperty('--proj-color', proj.color);
@@ -1200,7 +1417,7 @@ function renderFavorites() {
     card.appendChild(bar);
 
     const dot = el('div', { className: 'fav-card-dot' });
-    dot.style.background = proj.color;
+    dot.style.background = overrun ? 'var(--warn)' : proj.color;
     card.appendChild(dot);
 
     card.appendChild(el('div', { className: 'fav-card-name' }, proj.name));
@@ -1215,7 +1432,44 @@ function renderFavorites() {
       fmtDuration(totalMs)
     ));
 
+    if (overrun) {
+      const hrs = Math.floor(getTimerElapsed(timer) / 3600000);
+      card.appendChild(el('div', { className: 'fav-card-warn' }, `läuft seit ${hrs} h · noch aktiv?`));
+    }
+
     container.appendChild(card);
+  });
+}
+
+function openQuickStart() {
+  if (state.projects.length === 0) {
+    showToast('Erstelle zuerst ein Projekt');
+    return;
+  }
+  openModal(modal => {
+    const header = el('div', { className: 'modal-header' });
+    header.appendChild(el('div', { className: 'modal-title' }, 'Projekt starten'));
+    header.appendChild(el('button', { className: 'modal-close', onclick: closeModal }, '×'));
+    modal.appendChild(header);
+
+    const list = el('div', { className: 'project-list' });
+    state.projects.forEach(proj => {
+      const running = isTimerRunning(proj.id);
+      const row = el('div', {
+        className: 'project-row',
+        style: { cursor: 'pointer' },
+        onclick: () => { toggleTimer(proj.id); closeModal(); }
+      });
+      const dot = el('div', { className: 'project-row-color' });
+      dot.style.background = proj.color;
+      row.appendChild(dot);
+      row.appendChild(el('span', { className: 'project-row-name', style: { cursor: 'pointer' } }, proj.name));
+      if (running) {
+        row.appendChild(el('span', { style: { fontSize: '0.72rem', fontWeight: '600', color: 'var(--accent)' } }, 'läuft'));
+      }
+      list.appendChild(row);
+    });
+    modal.appendChild(list);
   });
 }
 
@@ -1337,6 +1591,14 @@ function renderDayView() {
         main.appendChild(el('span', { className: 'day-entry-time' },
           `${fmtTime(entry.start)} – ${fmtTime(entry.end)}`
         ));
+
+        const noteSpan = el('span', {
+          className: 'day-entry-note' + (entry.note ? '' : ' empty'),
+          title: 'Notiz bearbeiten'
+        }, entry.note || '+ Notiz');
+        noteSpan.addEventListener('click', (e) => { e.stopPropagation(); beginEditNote(entry.id, noteSpan); });
+        main.appendChild(noteSpan);
+
         main.appendChild(el('span', { className: 'day-entry-time' },
           fmtDurationShort(getEntryDuration(entry))
         ));
@@ -1357,12 +1619,24 @@ function renderDayView() {
       if (running) {
         const row = el('div', { className: 'day-entry-row' });
         const timer = state.activeTimers.find(t => t.projectId === projectId);
-        row.appendChild(el('span', { className: 'day-entry-time', style: { color: 'var(--accent)' } },
-          `${fmtTime(timer.startedAt)} – läuft…`
-        ));
-        row.appendChild(el('span', { className: 'day-entry-time', style: { color: 'var(--accent)' } },
+        const main = el('div', { className: 'day-entry-main' });
+
+        const startWrap = el('span', { className: 'day-entry-time', style: { color: 'var(--accent)' } });
+        const startBtn = el('span', { style: { cursor: 'pointer' } }, fmtTime(timer.startedAt));
+        startBtn.addEventListener('click', (e) => { e.stopPropagation(); beginEditTimerStart(projectId, startBtn); });
+        // Custom instant tooltip: native title never shows here because the row rebuilds every second
+        startBtn.addEventListener('pointerenter', (ev) => showBarTip(ev, 'Startzeit korrigieren'));
+        startBtn.addEventListener('pointermove', moveBarTip);
+        startBtn.addEventListener('pointerleave', hideBarTip);
+        startWrap.appendChild(startBtn);
+        startWrap.appendChild(document.createTextNode(' – läuft…'));
+        main.appendChild(startWrap);
+
+        main.appendChild(el('span', { className: 'day-entry-time', style: { color: 'var(--accent)', marginLeft: 'auto' } },
           fmtDuration(runningMs)
         ));
+        row.appendChild(main);
+
         details.appendChild(row);
       }
       group.appendChild(details);
@@ -1443,6 +1717,7 @@ function renderWeekView() {
     return;
   }
 
+  renderBarChart(container, projectIds, data, ['Mo','Di','Mi','Do','Fr','Sa','So']);
   renderTimeTable(container, days, projectIds, data, ['Mo','Di','Mi','Do','Fr','Sa','So']);
 }
 
@@ -1518,7 +1793,109 @@ function renderMonthView() {
     return;
   }
 
+  renderBarChart(container, projectIds, data, weekLabels);
   renderTimeTable(container, weeks.map((_, i) => i), projectIds, data, weekLabels);
+}
+
+/* Instant custom tooltip for bar-chart segments (native title has a ~1s delay) */
+function getBarTooltip() {
+  let tip = document.getElementById('bar-tooltip');
+  if (!tip) {
+    tip = el('div', { className: 'bar-tooltip', id: 'bar-tooltip' });
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function showBarTip(ev, text) {
+  const tip = getBarTooltip();
+  tip.textContent = text;
+  tip.classList.add('show');
+  positionBarTip(ev);
+}
+
+function moveBarTip(ev) {
+  const tip = document.getElementById('bar-tooltip');
+  if (tip && tip.classList.contains('show')) positionBarTip(ev);
+}
+
+function positionBarTip(ev) {
+  const tip = document.getElementById('bar-tooltip');
+  if (!tip) return;
+  const pad = 12;
+  const rect = tip.getBoundingClientRect();
+  let x = ev.clientX + pad;
+  let y = ev.clientY + pad;
+  if (x + rect.width > window.innerWidth - 4) x = ev.clientX - rect.width - pad;
+  if (y + rect.height > window.innerHeight - 4) y = ev.clientY - rect.height - pad;
+  tip.style.left = Math.max(4, x) + 'px';
+  tip.style.top = Math.max(4, y) + 'px';
+}
+
+function hideBarTip() {
+  const tip = document.getElementById('bar-tooltip');
+  if (tip) tip.classList.remove('show');
+}
+
+/* Stacked bar chart (shared by week & month) */
+function renderBarChart(container, projectIds, data, colLabels) {
+  hideBarTip(); // avoid a stale tooltip lingering when the chart rebuilds (e.g. running timer tick)
+  const collapsed = !!state.settings.chartCollapsed;
+
+  // Collapsible header: lets users with many projects reclaim vertical space for the table
+  const toggle = el('button', { className: 'chart-toggle', onclick: () => {
+    state.settings.chartCollapsed = !state.settings.chartCollapsed;
+    saveState();
+    renderCurrentView();
+  }});
+  toggle.appendChild(el('span', {}, 'Diagramm'));
+  const chev = el('span', { className: 'chart-chevron' + (collapsed ? '' : ' open') });
+  chev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  toggle.appendChild(chev);
+  container.appendChild(toggle);
+
+  if (collapsed) return;
+
+  const sortedIds = [...projectIds].sort((a, b) =>
+    (getProject(a)?.name || '').localeCompare(getProject(b)?.name || ''));
+
+  const colTotals = colLabels.map((_, ci) => {
+    let sum = 0;
+    sortedIds.forEach(pid => { sum += (data[pid] && data[pid][ci]) || 0; });
+    return sum;
+  });
+  const maxTotal = Math.max(...colTotals, 1);
+
+  const chart = el('div', { className: 'bar-chart' });
+  colLabels.forEach((label, ci) => {
+    const total = colTotals[ci];
+    const col = el('div', { className: 'bar-col' });
+    col.appendChild(el('div', { className: 'bar-total' }, total > 0 ? fmtDurationShort(total) : ''));
+
+    const track = el('div', { className: 'bar-track' });
+    const stack = el('div', { className: 'bar-stack' });
+    stack.style.height = (total / maxTotal * 100) + '%';
+    if (total > 0) {
+      sortedIds.forEach(pid => {
+        const ms = (data[pid] && data[pid][ci]) || 0;
+        if (ms <= 0) return;
+        const proj = getProject(pid);
+        const seg = el('div', { className: 'bar-seg' });
+        seg.style.height = (ms / total * 100) + '%';
+        seg.style.background = proj?.color || '#888';
+        const tipText = `${proj?.name || ''} · ${fmtDurationShort(ms)}`;
+        seg.addEventListener('pointerenter', (ev) => showBarTip(ev, tipText));
+        seg.addEventListener('pointermove', moveBarTip);
+        seg.addEventListener('pointerleave', hideBarTip);
+        stack.appendChild(seg);
+      });
+    }
+    track.appendChild(stack);
+    col.appendChild(track);
+    col.appendChild(el('div', { className: 'bar-label' }, label));
+    chart.appendChild(col);
+  });
+  container.appendChild(chart);
 }
 
 /* Shared table renderer */
@@ -1840,6 +2217,14 @@ function openEntryModal(entry) {
     timeRow.appendChild(endGroup);
     modal.appendChild(timeRow);
 
+    // Note
+    const noteGroup = el('div', { className: 'form-group' });
+    noteGroup.appendChild(el('label', { className: 'form-label' }, 'Notiz (optional)'));
+    const noteInput = el('input', { className: 'form-input', type: 'text', id: 'manual-note', placeholder: 'Woran hast du gearbeitet?', maxlength: '200' });
+    if (isEdit && entry.note) noteInput.value = entry.note;
+    noteGroup.appendChild(noteInput);
+    modal.appendChild(noteGroup);
+
     if (isEdit) {
       const btnRow = el('div', { className: 'btn-row' });
       btnRow.appendChild(el('button', { className: 'btn btn-danger', onclick: () => confirmDeleteEntry(entry.id) }, 'Löschen'));
@@ -1856,6 +2241,7 @@ function readEntryForm() {
   const dateStr = document.getElementById('manual-date').value;
   const startStr = document.getElementById('manual-start').value;
   const endStr = document.getElementById('manual-end').value;
+  const note = document.getElementById('manual-note').value.trim();
 
   if (!dateStr || !startStr || !endStr) {
     showToast('Bitte alle Felder ausfüllen');
@@ -1876,7 +2262,7 @@ function readEntryForm() {
     return null;
   }
 
-  return { projectId, start, end };
+  return { projectId, start, end, note };
 }
 
 function saveManualEntry() {
@@ -1886,7 +2272,8 @@ function saveManualEntry() {
     id: crypto.randomUUID(),
     projectId: data.projectId,
     start: data.start.toISOString(),
-    end: data.end.toISOString()
+    end: data.end.toISOString(),
+    note: data.note || ''
   });
   saveState();
   closeModal();
@@ -1902,6 +2289,7 @@ function saveEntryEdit(id) {
   entry.projectId = data.projectId;
   entry.start = data.start.toISOString();
   entry.end = data.end.toISOString();
+  entry.note = data.note || '';
   saveState();
   closeModal();
   render();
@@ -1931,6 +2319,78 @@ function confirmDeleteEntry(id) {
     }}, 'Löschen'));
     modal.appendChild(actions);
   });
+}
+
+function beginEditNote(entryId, spanEl) {
+  const entry = state.entries.find(e => e.id === entryId);
+  if (!entry) return;
+  inlineEditing = true;
+  const input = el('input', { className: 'form-input day-entry-note-edit', type: 'text', placeholder: 'Notiz…', maxlength: '200' });
+  input.value = entry.note || '';
+  spanEl.replaceWith(input);
+  input.focus();
+  input.select();
+  input.addEventListener('click', (e) => e.stopPropagation());
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    inlineEditing = false;
+    if (save) {
+      const v = input.value.trim();
+      if (v !== (entry.note || '')) {
+        entry.note = v;
+        saveState();
+      }
+    }
+    renderDayView();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function beginEditTimerStart(projectId, spanEl) {
+  const timer = state.activeTimers.find(t => t.projectId === projectId);
+  if (!timer) return;
+  hideBarTip(); // clear the hover tooltip before swapping the span for the input
+  inlineEditing = true;
+  const orig = new Date(timer.startedAt);
+  const input = el('input', { className: 'form-input day-entry-note-edit', type: 'time', style: { flex: 'none', width: 'auto' } });
+  input.value = localTimeStr(orig);
+  spanEl.replaceWith(input);
+  input.focus();
+  input.addEventListener('click', (e) => e.stopPropagation());
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    inlineEditing = false;
+    if (save && input.value) {
+      const [h, m] = input.value.split(':').map(Number);
+      const nd = new Date(orig); // keep the timer's original date, change only the time of day
+      nd.setHours(h, m, 0, 0);
+      if (nd > new Date()) {
+        showToast('Startzeit darf nicht in der Zukunft liegen');
+      } else if (nd.toISOString() !== timer.startedAt) {
+        timer.startedAt = nd.toISOString();
+        saveState();
+        showToast('Startzeit angepasst');
+      }
+    }
+    renderDayView();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
 }
 
 /* ============================================
@@ -1965,12 +2425,32 @@ function openSettings() {
     themeGroup.appendChild(themeRow);
     modal.appendChild(themeGroup);
 
+    // Timer reminder threshold
+    const remGroup = el('div', { className: 'settings-group' });
+    const remRow = el('div', { className: 'settings-row' });
+    remRow.appendChild(el('span', { className: 'settings-label' }, 'Timer-Erinnerung'));
+    const remSelect = el('select', { className: 'form-select', style: { width: 'auto' } });
+    [['0','Aus'],['1','ab 1 h'],['4','ab 4 h'],['6','ab 6 h']].forEach(([val, label]) => {
+      const opt = el('option', { value: val }, label);
+      if (String(state.settings.reminderHours ?? 6) === val) opt.setAttribute('selected', 'selected');
+      remSelect.appendChild(opt);
+    });
+    remSelect.addEventListener('change', () => {
+      state.settings.reminderHours = parseInt(remSelect.value, 10);
+      saveState();
+      renderFavorites();
+    });
+    remRow.appendChild(remSelect);
+    remGroup.appendChild(remRow);
+    modal.appendChild(remGroup);
+
     // Export
     const exportGroup = el('div', { className: 'settings-group' });
     exportGroup.appendChild(el('div', { className: 'form-label' }, 'Daten'));
     const btnRow = el('div', { className: 'btn-row' });
-    btnRow.appendChild(el('button', { className: 'btn btn-secondary', onclick: exportData }, 'Export JSON'));
-    btnRow.appendChild(el('button', { className: 'btn btn-secondary', onclick: triggerImport }, 'Import JSON'));
+    btnRow.appendChild(el('button', { className: 'btn btn-secondary', style: { flex: '1' }, onclick: exportData }, 'Export JSON'));
+    btnRow.appendChild(el('button', { className: 'btn btn-secondary', style: { flex: '1' }, onclick: triggerImport }, 'Import JSON'));
+    btnRow.appendChild(el('button', { className: 'btn btn-secondary', style: { flex: '1' }, onclick: exportCSV }, 'Export CSV'));
     exportGroup.appendChild(btnRow);
     modal.appendChild(exportGroup);
 
@@ -2015,6 +2495,50 @@ function exportData() {
   saveState();
   dismissExportReminder();
   showToast('Export heruntergeladen');
+}
+
+function exportCSV() {
+  if (state.entries.length === 0) {
+    showToast('Keine Einträge zum Exportieren');
+    return;
+  }
+  const sep = ';'; // German-Excel-friendly delimiter
+  const esc = (v) => {
+    const s = String(v ?? '');
+    return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const fullDate = (d) =>
+    `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
+
+  const lines = [['Datum','Projekt','Start','Ende','Dauer','Stunden','Notiz'].join(sep)];
+  [...state.entries]
+    .sort((a, b) => new Date(a.start) - new Date(b.start))
+    .forEach(e => {
+      const proj = getProject(e.projectId);
+      const start = new Date(e.start);
+      const end = new Date(e.end);
+      const hoursDec = (getEntryDuration(e) / 3600000).toFixed(2).replace('.', ',');
+      lines.push([
+        fullDate(start),
+        esc(proj ? proj.name : '?'),
+        fmtTime(e.start),
+        fmtTime(e.end),
+        fmtDurationShort(getEntryDuration(e)),
+        hoursDec,
+        esc(e.note || '')
+      ].join(sep));
+    });
+
+  // BOM so Excel detects UTF-8 (umlauts in names/notes)
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date().toISOString().split('T')[0];
+  a.href = url;
+  a.download = `timetrack-export-${today}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV heruntergeladen');
 }
 
 function triggerImport() {
@@ -2129,12 +2653,27 @@ function confirmClearData() {
    TOAST
    ============================================ */
 let toastTimeout;
-function showToast(msg) {
+function showToast(msg, action) {
   const toast = document.getElementById('toast');
-  toast.textContent = msg;
+  clearEl(toast);
+  toast.appendChild(document.createTextNode(msg));
+  const hasAction = action && action.label && typeof action.onAction === 'function';
+  if (hasAction) {
+    const btn = el('button', { className: 'toast-action', onclick: () => {
+      clearTimeout(toastTimeout);
+      toast.classList.remove('show');
+      toast.style.pointerEvents = 'none';
+      action.onAction();
+    }}, action.label);
+    toast.appendChild(btn);
+  }
+  toast.style.pointerEvents = hasAction ? 'auto' : 'none';
   toast.classList.add('show');
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.remove('show'), 2500);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.style.pointerEvents = 'none';
+  }, hasAction ? 5000 : 2500);
 }
 
 /* ============================================
@@ -2179,7 +2718,7 @@ function registerPWA() {
   // Service Worker
   if ('serviceWorker' in navigator) {
     const swCode = `
-      const CACHE_NAME = 'timetrack-v1';
+      const CACHE_NAME = 'timetrack-v12';
       self.addEventListener('install', e => {
         e.waitUntil(
           caches.open(CACHE_NAME).then(cache => cache.add(self.location.href.replace(/sw\\.js.*/, 'index.html')))
@@ -2281,6 +2820,7 @@ render();
 startTickInterval();
 registerPWA();
 checkExportReminder();
+checkTimerReminders();
 
 // Keyboard: Escape closes modal
 document.addEventListener('keydown', (e) => {
