@@ -464,6 +464,91 @@ header .header-actions {
 .day-total-value { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: var(--accent); }
 
 /* ============================================
+   DAY TIMELINE
+   ============================================ */
+.timeline {
+  padding: 10px 12px 6px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+}
+
+/* Names the visible range, so the zooming scale is stated rather than guessed */
+.timeline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+}
+
+.timeline-range {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.timeline-track {
+  position: relative;
+  height: 26px;
+  background: var(--bg-tertiary);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+/* Everything inside the track is positioned against it and spans its height */
+.timeline-grid,
+.timeline-seg,
+.timeline-now {
+  position: absolute;
+  top: 0; bottom: 0;
+}
+
+.timeline-grid {
+  width: 1px;
+  background: var(--border);
+  opacity: 0.7;
+}
+
+.timeline-seg {
+  min-width: 3px; /* a 10-minute entry stays visible and hoverable */
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* Running timers stay visibly unfinished */
+.timeline-seg.running { opacity: 0.65; }
+
+.timeline-now {
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.timeline-axis {
+  position: relative;
+  height: 13px;
+  margin-top: 3px;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ============================================
    WEEK / MONTH VIEW
    ============================================ */
 .table-container {
@@ -1047,7 +1132,7 @@ header .header-actions {
 <div class="app" id="app">
   <!-- Header -->
   <header>
-    <h1>TimeTrack<span class="version">0.8.11</span></h1>
+    <h1>TimeTrack<span class="version">0.8.15</span></h1>
     <div class="header-actions">
       <button class="icon-btn" onclick="openQuickStart()" title="Projekt starten">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -1113,7 +1198,6 @@ let currentView = 'day';
 let viewDate = new Date();
 let timerInterval = null;
 let openGroups = new Set(); // Track which day-view project groups are expanded
-let inlineEditing = false;  // Suspend the per-second re-render while editing a note inline
 let remindedTimers = new Set(); // Timer runs we've already shown an active reminder for
 
 function getDefaultState() {
@@ -1254,12 +1338,24 @@ function isTimerRunning(projectId) {
 
 function startTickInterval() {
   if (timerInterval) clearInterval(timerInterval);
+  let lastCoarseTick = 0;   // minute bucket of the last week/month rebuild
   timerInterval = setInterval(() => {
-    if (state.activeTimers.length > 0) {
-      renderFavorites();
-      if (!inlineEditing) renderCurrentView();
-      checkTimerReminders();
+    if (state.activeTimers.length === 0) {
+      pruneLiveNodes();     // nothing to tick, but detached views must not linger
+      return;
     }
+    tickLive();
+    // Week/month totals are minute-granular and not wired up as live nodes, so
+    // they still need a rebuild — but once a minute, not once a second, which
+    // keeps the click-stealing window (see LIVE NODES) rare instead of constant.
+    if (currentView !== 'day') {
+      const minute = Math.floor(Date.now() / 60000);
+      if (minute !== lastCoarseTick) {
+        lastCoarseTick = minute;
+        renderCurrentView();
+      }
+    }
+    checkTimerReminders();
   }, 1000);
 }
 
@@ -1326,14 +1422,21 @@ function getProject(id) {
   return state.projects.find(p => p.id === id);
 }
 
+/* One spelling of "this calendar day". setDate(+1) rather than +24 h, because
+   the two differ by an hour on the days the clocks change. */
+function dayBounds(date) {
+  const start = new Date(date);
+  start.setHours(0,0,0,0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 function getEntriesForDay(date) {
-  const dayStart = new Date(date);
-  dayStart.setHours(0,0,0,0);
-  const dayEnd = new Date(date);
-  dayEnd.setHours(23,59,59,999);
+  const { start, end } = dayBounds(date);
   return state.entries.filter(e => {
     const s = new Date(e.start);
-    return s >= dayStart && s <= dayEnd;
+    return s >= start && s < end;
   });
 }
 
@@ -1347,14 +1450,35 @@ function getRunningTimeForProject(projectId, date) {
   const started = new Date(timer.startedAt);
   const now = new Date();
   // Only count time for the given date
-  const dayStart = new Date(date);
-  dayStart.setHours(0,0,0,0);
-  const dayEnd = new Date(date);
-  dayEnd.setHours(23,59,59,999);
+  const { start: dayStart, end: dayEnd } = dayBounds(date);
   const effectiveStart = started < dayStart ? dayStart : started;
   const effectiveEnd = now > dayEnd ? dayEnd : now;
   if (effectiveStart > effectiveEnd) return 0;
   return effectiveEnd - effectiveStart;
+}
+
+function sumDurations(entries) {
+  return entries.reduce((sum, e) => sum + getEntryDuration(e), 0);
+}
+
+/* Day totals, split into the part that only a re-render can change (completed
+   entries) and the part that moves every second (running timers). Live nodes
+   capture the first at render time and add the second per tick, so the
+   once-a-second path never rescans state.entries. */
+function getProjectDayTotal(projectId, date) {
+  const done = sumDurations(getEntriesForDay(date).filter(e => e.projectId === projectId));
+  return done + getRunningTimeForProject(projectId, date);
+}
+
+function getRunningDayTotal(date) {
+  return state.activeTimers.reduce((sum, t) =>
+    getProject(t.projectId) ? sum + getRunningTimeForProject(t.projectId, date) : sum, 0);
+}
+
+function getDayTotal(date) {
+  // Orphan entries (project deleted) stay out, matching what the day view lists
+  const done = sumDurations(getEntriesForDay(date).filter(e => getProject(e.projectId)));
+  return done + getRunningDayTotal(date);
 }
 
 /* ============================================
@@ -1387,6 +1511,40 @@ function clearEl(element) {
 }
 
 /* ============================================
+   LIVE NODES
+   ============================================
+   Nodes whose content changes once per second while a timer runs. The tick
+   patches them in place instead of re-rendering the view: a rebuild between
+   pointerdown and pointerup destroys the button under the cursor, and the
+   click never fires — which made day navigation feel unreliable.
+   Detached nodes drop out of the registry by themselves. */
+let liveNodes = [];
+
+function liveText(element, fn, live = true) {
+  return liveUpdate(element, () => {
+    const value = fn();
+    if (element.textContent !== value) element.textContent = value;
+  }, live);
+}
+
+/* `live: false` still applies the value once — the caller gets the same result
+   without a node that would be ticked forever for a value that cannot change. */
+function liveUpdate(element, fn, live = true) {
+  fn();
+  if (live) liveNodes.push({ element, fn });
+  return element;
+}
+
+function pruneLiveNodes() {
+  liveNodes = liveNodes.filter(n => n.element.isConnected);
+}
+
+function tickLive() {
+  pruneLiveNodes();
+  liveNodes.forEach(n => n.fn());
+}
+
+/* ============================================
    RENDER FAVORITES
    ============================================ */
 function renderFavorites() {
@@ -1402,13 +1560,10 @@ function renderFavorites() {
   }
   visible.forEach(proj => {
     const running = isTimerRunning(proj.id);
-    const timer = running ? state.activeTimers.find(t => t.projectId === proj.id) : null;
     const reminderMs = (state.settings.reminderHours ?? 6) * 3600000;
-    // Overrun uses the timer's continuous run time, not the per-day clamped time
-    const overrun = !!(timer && reminderMs > 0 && getTimerElapsed(timer) >= reminderMs);
 
     const card = el('div', {
-      className: 'fav-card' + (running ? ' running' : '') + (overrun ? ' overrun' : ''),
+      className: 'fav-card' + (running ? ' running' : ''),
       onclick: () => toggleTimer(proj.id)
     });
     card.style.setProperty('--proj-color', proj.color);
@@ -1417,25 +1572,33 @@ function renderFavorites() {
     card.appendChild(bar);
 
     const dot = el('div', { className: 'fav-card-dot' });
-    dot.style.background = overrun ? 'var(--warn)' : proj.color;
     card.appendChild(dot);
-
     card.appendChild(el('div', { className: 'fav-card-name' }, proj.name));
+    const timerEl = el('div', { className: 'fav-card-timer' });
+    card.appendChild(timerEl);
+    const warnEl = el('div', { className: 'fav-card-warn' });
+    card.appendChild(warnEl);
 
-    // Cumulative time for today: completed entries + running timer
-    const today = new Date();
-    const todayEntries = getEntriesForDay(today).filter(e => e.projectId === proj.id);
-    let totalMs = todayEntries.reduce((sum, e) => sum + getEntryDuration(e), 0);
-    totalMs += getRunningTimeForProject(proj.id, today);
+    // Completed time for today cannot change without a re-render; only the
+    // running remainder is recomputed per tick.
+    const doneToday = sumDurations(getEntriesForDay(new Date()).filter(e => e.projectId === proj.id));
 
-    card.appendChild(el('div', { className: 'fav-card-timer' },
-      fmtDuration(totalMs)
-    ));
-
-    if (overrun) {
-      const hrs = Math.floor(getTimerElapsed(timer) / 3600000);
-      card.appendChild(el('div', { className: 'fav-card-warn' }, `läuft seit ${hrs} h · noch aktiv?`));
-    }
+    // Overrun uses the timer's continuous run time, not the per-day clamped time.
+    // It can flip mid-run, so it is part of the live update rather than fixed at render.
+    let wasOverrun = null;
+    const refresh = () => {
+      const timer = state.activeTimers.find(t => t.projectId === proj.id);
+      const elapsed = timer ? getTimerElapsed(timer) : 0;
+      const overrun = !!(timer && reminderMs > 0 && elapsed >= reminderMs);
+      timerEl.textContent = fmtDuration(doneToday + getRunningTimeForProject(proj.id, new Date()));
+      if (overrun) warnEl.textContent = `läuft seit ${Math.floor(elapsed / 3600000)} h · noch aktiv?`;
+      if (overrun === wasOverrun) return; // flips at most once per run — don't touch styles every second
+      wasOverrun = overrun;
+      card.classList.toggle('overrun', overrun);
+      dot.style.background = overrun ? 'var(--warn)' : proj.color;
+      warnEl.style.display = overrun ? '' : 'none';
+    };
+    liveUpdate(card, refresh, running);
 
     container.appendChild(card);
   });
@@ -1541,8 +1704,9 @@ function renderDayView() {
     }
   });
 
+  renderDayTimeline(container);
+
   const entriesContainer = el('div', { className: 'day-entries' });
-  let dayTotal = 0;
 
   if (Object.keys(grouped).length === 0) {
     entriesContainer.appendChild(el('div', { className: 'no-data' }, 'Keine Einträge für diesen Tag'));
@@ -1557,10 +1721,7 @@ function renderDayView() {
       const proj = getProject(projectId);
       if (!proj) return;
       const projEntries = grouped[projectId];
-      let projTotal = projEntries.reduce((sum, e) => sum + getEntryDuration(e), 0);
-      const runningMs = getRunningTimeForProject(projectId, viewDate);
-      projTotal += runningMs;
-      dayTotal += projTotal;
+      const projDone = sumDurations(projEntries);
 
       const group = el('div', { className: 'day-project-group' });
       const isOpen = openGroups.has(projectId);
@@ -1579,9 +1740,14 @@ function renderDayView() {
       headerLeft.appendChild(el('span', { className: 'day-project-name' }, proj.name));
       header.appendChild(headerLeft);
       const running = isTimerRunning(projectId);
-      header.appendChild(el('span', { className: 'day-project-sum' },
-        running ? fmtDuration(projTotal) : fmtDurationShort(projTotal)
-      ));
+      const sumEl = el('span', { className: 'day-project-sum' });
+      liveText(sumEl, () => {
+        const runningMs = getRunningTimeForProject(projectId, viewDate);
+        return runningMs > 0
+          ? fmtDuration(projDone + runningMs)
+          : fmtDurationShort(projDone);
+      }, running);
+      header.appendChild(sumEl);
       group.appendChild(header);
 
       const details = el('div', { className: 'day-project-entries' + (isOpen ? ' open' : '') });
@@ -1624,16 +1790,15 @@ function renderDayView() {
         const startWrap = el('span', { className: 'day-entry-time', style: { color: 'var(--accent)' } });
         const startBtn = el('span', { style: { cursor: 'pointer' } }, fmtTime(timer.startedAt));
         startBtn.addEventListener('click', (e) => { e.stopPropagation(); beginEditTimerStart(projectId, startBtn); });
-        // Custom instant tooltip: native title never shows here because the row rebuilds every second
-        startBtn.addEventListener('pointerenter', (ev) => showBarTip(ev, 'Startzeit korrigieren'));
-        startBtn.addEventListener('pointermove', moveBarTip);
-        startBtn.addEventListener('pointerleave', hideBarTip);
+        // Custom instant tooltip: the native title has a ~1 s delay
+        attachBarTip(startBtn, 'Startzeit korrigieren');
         startWrap.appendChild(startBtn);
         startWrap.appendChild(document.createTextNode(' – läuft…'));
         main.appendChild(startWrap);
 
-        main.appendChild(el('span', { className: 'day-entry-time', style: { color: 'var(--accent)', marginLeft: 'auto' } },
-          fmtDuration(runningMs)
+        main.appendChild(liveText(
+          el('span', { className: 'day-entry-time', style: { color: 'var(--accent)', marginLeft: 'auto' } }),
+          () => fmtDuration(getRunningTimeForProject(projectId, viewDate))
         ));
         row.appendChild(main);
 
@@ -1647,14 +1812,148 @@ function renderDayView() {
   container.appendChild(entriesContainer);
 
   // Day total
-  if (dayTotal > 0) {
+  const doneTotal = sumDurations(entries.filter(e => getProject(e.projectId)));
+  const hasRunning = getRunningDayTotal(viewDate) > 0;
+  if (doneTotal + getRunningDayTotal(viewDate) > 0) {
     const totalRow = el('div', { className: 'day-total' });
     totalRow.appendChild(el('span', { className: 'day-total-label' }, 'Gesamt'));
-    const hasRunning = state.activeTimers.some(t => getRunningTimeForProject(t.projectId, viewDate) > 0);
-    totalRow.appendChild(el('span', { className: 'day-total-value' },
-      hasRunning ? fmtDuration(dayTotal) : fmtDurationShort(dayTotal)
-    ));
+    const totalEl = el('span', { className: 'day-total-value' });
+    liveText(totalEl, () => {
+      const runningMs = getRunningDayTotal(viewDate);
+      return runningMs > 0 ? fmtDuration(doneTotal + runningMs) : fmtDurationShort(doneTotal);
+    }, hasRunning);
+    totalRow.appendChild(totalEl);
     container.appendChild(totalRow);
+  }
+}
+
+/* Day Timeline — horizontal bar of the day: one block per entry, gaps are breaks */
+const TIMELINE_MIN_SPAN_H = 6; // never squeeze a short day into a sliver
+
+function getDayTimelineSegments(date) {
+  const { start: dayStart, end: dayEnd } = dayBounds(date);
+  const segs = [];
+
+  getEntriesForDay(date).forEach(e => {
+    const start = Math.max(new Date(e.start).getTime(), dayStart.getTime());
+    const end = Math.min(new Date(e.end).getTime(), dayEnd.getTime());
+    if (end > start) segs.push({ start, end, projectId: e.projectId, note: e.note, entryId: e.id });
+  });
+
+  // Running timers show up as an open block up to "now"
+  state.activeTimers.forEach(t => {
+    const start = Math.max(new Date(t.startedAt).getTime(), dayStart.getTime());
+    const end = Math.min(Date.now(), dayEnd.getTime());
+    if (end > start) segs.push({ start, end, projectId: t.projectId, running: true });
+  });
+
+  return segs.sort((a, b) => a.start - b.start);
+}
+
+/* The window zooms to the hours that actually contain work, so a short day is
+   not squeezed into a sliver. It only ever snaps to full hours, and the header
+   spells the range out — otherwise the scale silently changes under you. */
+function getTimelineWindow(segs, toHours) {
+  const first = Math.floor(Math.min(...segs.map(s => toHours(s.start))));
+  const last = Math.ceil(Math.max(...segs.map(s => toHours(s.end))));
+  const grow = Math.max(0, TIMELINE_MIN_SPAN_H - (last - first));
+  const from = Math.max(0, Math.min(first - Math.ceil(grow / 2), 24 - TIMELINE_MIN_SPAN_H));
+  return { from, to: Math.max(last, from + TIMELINE_MIN_SPAN_H) };
+}
+
+function renderDayTimeline(container) {
+  const segs = getDayTimelineSegments(viewDate);
+  if (segs.length === 0) return;
+
+  const { start: dayStart, end: dayEnd } = dayBounds(viewDate);
+  const toHours = ts => (ts - dayStart.getTime()) / 3600000;
+  const scale = getTimelineWindow(segs, toHours);   // mutated in place on a re-fit
+  const pct = h => (h - scale.from) / (scale.to - scale.from) * 100;
+  const hour = h => String(h).padStart(2, '0');
+
+  const host = el('div', { className: 'timeline' });
+  const head = el('div', { className: 'timeline-head' });
+  head.appendChild(el('span', {}, 'Tagesverlauf'));
+  const rangeEl = el('span', { className: 'timeline-range' });
+  head.appendChild(rangeEl);
+  host.appendChild(head);
+
+  const track = el('div', { className: 'timeline-track' });
+  const axis = el('div', { className: 'timeline-axis' });
+  host.appendChild(track);
+  host.appendChild(axis);
+  container.appendChild(host);
+
+  /* Writing a percentage that rounds to what is already there costs a layout
+     for a sub-pixel move, so every position goes through this. */
+  const place = (element, prop, value) => {
+    const next = value.toFixed(2) + '%';
+    if (element.style[prop] !== next) element.style[prop] = next;
+  };
+
+  // The hour grid is the only part the window actually changes, and it carries
+  // no handlers — so a re-fit rebuilds it and merely repositions everything else.
+  const drawAxis = () => {
+    clearEl(axis);
+    [...track.querySelectorAll('.timeline-grid')].forEach(g => g.remove());
+    rangeEl.textContent = `${hour(scale.from)}–${hour(scale.to)} Uhr`;
+    const span = scale.to - scale.from;
+    const step = span <= 8 ? 1 : span <= 14 ? 2 : 3;
+    for (let h = Math.ceil(scale.from / step) * step; h <= scale.to; h += step) {
+      if (h > scale.from) track.appendChild(el('div', { className: 'timeline-grid', style: { left: pct(h) + '%' } }));
+      axis.appendChild(el('div', { className: 'timeline-tick', style: { left: pct(h) + '%' } }, hour(h)));
+    }
+  };
+
+  const placers = [];   // re-run after a re-fit; each one is idempotent
+  segs.forEach(seg => {
+    const proj = getProject(seg.projectId);
+    const block = el('div', { className: 'timeline-seg' + (seg.running ? ' running' : '') });
+    block.style.background = proj?.color || '#888';
+
+    const position = () => {
+      const end = seg.running ? Math.min(Date.now(), dayEnd.getTime()) : seg.end;
+      place(block, 'left', pct(toHours(seg.start)));
+      place(block, 'width', (end - seg.start) / 3600000 / (scale.to - scale.from) * 100);
+    };
+    placers.push(position);
+    liveUpdate(block, position, seg.running);
+
+    attachBarTip(block, () => {
+      const end = seg.running ? Date.now() : seg.end;
+      const times = `${fmtTime(seg.start)}–${seg.running ? 'läuft' : fmtTime(seg.end)}`;
+      return `${proj?.name || '?'} · ${times} · ${fmtDurationShort(end - seg.start)}`
+        + (seg.note ? ` — ${seg.note}` : '');
+    });
+    if (seg.entryId) block.addEventListener('click', () => openEditEntry(seg.entryId));
+
+    track.appendChild(block);
+  });
+
+  // "Now" marker, only when looking at today and only inside the window
+  if (isSameDay(viewDate, new Date())) {
+    const marker = el('div', { className: 'timeline-now' });
+    const position = () => {
+      const nowH = toHours(Date.now());
+      marker.style.display = nowH >= scale.from && nowH <= scale.to ? '' : 'none';
+      place(marker, 'left', pct(nowH));
+    };
+    placers.push(position);
+    liveUpdate(marker, position);
+    track.appendChild(marker);
+  }
+
+  drawAxis();
+
+  /* A running timer eventually passes the right edge. Re-fitting only moves the
+     scale — no clickable node is rebuilt, so a click in flight cannot be lost. */
+  if (state.activeTimers.length > 0) {
+    liveUpdate(host, () => {
+      if (scale.to >= 24 || toHours(Date.now()) <= scale.to) return;
+      Object.assign(scale, getTimelineWindow(getDayTimelineSegments(viewDate), toHours));
+      drawAxis();
+      placers.forEach(p => p());
+    });
   }
 }
 
@@ -1837,6 +2136,14 @@ function hideBarTip() {
   if (tip) tip.classList.remove('show');
 }
 
+/* text may be a string or a function, for labels that change while hovering */
+function attachBarTip(element, text) {
+  element.addEventListener('pointerenter', ev => showBarTip(ev, typeof text === 'function' ? text() : text));
+  element.addEventListener('pointermove', moveBarTip);
+  element.addEventListener('pointerleave', hideBarTip);
+  return element;
+}
+
 /* Stacked bar chart (shared by week & month) */
 function renderBarChart(container, projectIds, data, colLabels) {
   hideBarTip(); // avoid a stale tooltip lingering when the chart rebuilds (e.g. running timer tick)
@@ -1883,10 +2190,7 @@ function renderBarChart(container, projectIds, data, colLabels) {
         const seg = el('div', { className: 'bar-seg' });
         seg.style.height = (ms / total * 100) + '%';
         seg.style.background = proj?.color || '#888';
-        const tipText = `${proj?.name || ''} · ${fmtDurationShort(ms)}`;
-        seg.addEventListener('pointerenter', (ev) => showBarTip(ev, tipText));
-        seg.addEventListener('pointermove', moveBarTip);
-        seg.addEventListener('pointerleave', hideBarTip);
+        attachBarTip(seg, `${proj?.name || ''} · ${fmtDurationShort(ms)}`);
         stack.appendChild(seg);
       });
     }
@@ -2324,7 +2628,6 @@ function confirmDeleteEntry(id) {
 function beginEditNote(entryId, spanEl) {
   const entry = state.entries.find(e => e.id === entryId);
   if (!entry) return;
-  inlineEditing = true;
   const input = el('input', { className: 'form-input day-entry-note-edit', type: 'text', placeholder: 'Notiz…', maxlength: '200' });
   input.value = entry.note || '';
   spanEl.replaceWith(input);
@@ -2336,7 +2639,6 @@ function beginEditNote(entryId, spanEl) {
   const finish = (save) => {
     if (done) return;
     done = true;
-    inlineEditing = false;
     if (save) {
       const v = input.value.trim();
       if (v !== (entry.note || '')) {
@@ -2358,7 +2660,6 @@ function beginEditTimerStart(projectId, spanEl) {
   const timer = state.activeTimers.find(t => t.projectId === projectId);
   if (!timer) return;
   hideBarTip(); // clear the hover tooltip before swapping the span for the input
-  inlineEditing = true;
   const orig = new Date(timer.startedAt);
   const input = el('input', { className: 'form-input day-entry-note-edit', type: 'time', style: { flex: 'none', width: 'auto' } });
   input.value = localTimeStr(orig);
@@ -2370,7 +2671,6 @@ function beginEditTimerStart(projectId, spanEl) {
   const finish = (save) => {
     if (done) return;
     done = true;
-    inlineEditing = false;
     if (save && input.value) {
       const [h, m] = input.value.split(':').map(Number);
       const nd = new Date(orig); // keep the timer's original date, change only the time of day
@@ -2718,7 +3018,7 @@ function registerPWA() {
   // Service Worker
   if ('serviceWorker' in navigator) {
     const swCode = `
-      const CACHE_NAME = 'timetrack-v12';
+      const CACHE_NAME = 'timetrack-v16';
       self.addEventListener('install', e => {
         e.waitUntil(
           caches.open(CACHE_NAME).then(cache => cache.add(self.location.href.replace(/sw\\.js.*/, 'index.html')))
